@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AusWeather ML — Rain Predictor</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:        #060c14;
+    --surface:   #0d1a2a;
+    --surface2:  #112234;
+    --border:    #1e3a5f;
+    --accent:    #38bdf8;
+    --accent2:   #0ea5e9;
+    --rain:      #60a5fa;
+    --sun:       #fbbf24;
+    --green:     #34d399;
+    --orange:    #fb923c;
+    --text:      #e2f0fb;
+    --muted:     #64879e;
+    --card-glow: rgba(56,189,248,0.07);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Background ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% -10%, rgba(14,165,233,0.12) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 110%, rgba(56,189,248,0.08) 0%, transparent 60%);
+    pointer-events: none; z-index: 0;
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── Header ── */
+  header {
+    padding: 48px 0 32px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 40px;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 14px; margin-bottom: 8px;
+  }
+  .logo-icon {
+    width: 44px; height: 44px;
+    background: linear-gradient(135deg, var(--accent2), var(--rain));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+  }
+  h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(1.6rem, 3vw, 2.2rem);
+    font-weight: 800; letter-spacing: -0.5px;
+    color: var(--text);
+  }
+  h1 span { color: var(--accent); }
+  .tagline { color: var(--muted); font-size: 0.82rem; margin-top: 4px; }
+
+  /* ── Model Metrics Bar ── */
+  .metrics-bar {
+    display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 40px;
+  }
+  .metric-chip {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 18px;
+    display: flex; flex-direction: column; gap: 2px;
+    flex: 1; min-width: 160px;
+    transition: border-color .2s;
+  }
+  .metric-chip:hover { border-color: var(--accent); }
+  .metric-chip .val {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.4rem; font-weight: 700;
+    color: var(--accent);
+  }
+  .metric-chip .lbl { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+
+  /* ── Main Grid ── */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 24px;
+    align-items: start;
+  }
+  @media (max-width: 820px) { .main-grid { grid-template-columns: 1fr; } }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+  }
+  .card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.85rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .1em;
+    color: var(--muted); margin-bottom: 22px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-title::before {
+    content: ''; display: block;
+    width: 3px; height: 14px;
+    background: var(--accent); border-radius: 2px;
+  }
+
+  /* ── Form Grid ── */
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 560px) { .form-grid { grid-template-columns: 1fr; } }
+
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label {
+    font-size: 0.72rem; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  .field input, .field select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.88rem;
+    padding: 9px 12px;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+    width: 100%;
+    -webkit-appearance: none;
+  }
+  .field input:focus, .field select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(56,189,248,0.12);
+  }
+  .field select option { background: var(--surface2); }
+
+  .section-label {
+    grid-column: 1 / -1;
+    font-size: 0.7rem; color: var(--accent);
+    text-transform: uppercase; letter-spacing: .1em;
+    padding-top: 6px; border-top: 1px solid var(--border);
+  }
+
+  /* Toggle */
+  .toggle-row {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .toggle-label { font-size: 0.82rem; color: var(--text); }
+  .toggle {
+    position: relative; display: inline-block;
+    width: 44px; height: 24px;
+  }
+  .toggle input { display: none; }
+  .slider {
+    position: absolute; inset: 0;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 24px; cursor: pointer;
+    transition: background .2s;
+  }
+  .slider::before {
+    content: ''; position: absolute;
+    width: 16px; height: 16px;
+    left: 3px; top: 3px;
+    background: var(--muted); border-radius: 50%;
+    transition: transform .2s, background .2s;
+  }
+  .toggle input:checked + .slider { background: var(--accent2); border-color: var(--accent); }
+  .toggle input:checked + .slider::before { transform: translateX(20px); background: #fff; }
+
+  /* ── Button ── */
+  .btn-predict {
+    margin-top: 20px;
+    width: 100%; padding: 14px;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    border: none; border-radius: 10px;
+    color: #060c14; font-family: 'Syne', sans-serif;
+    font-size: 0.95rem; font-weight: 700;
+    letter-spacing: .04em; cursor: pointer;
+    transition: opacity .2s, transform .1s;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn-predict:hover  { opacity: .9; }
+  .btn-predict:active { transform: scale(.98); }
+  .btn-predict.loading { opacity: .6; pointer-events: none; }
+
+  /* Spinner */
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(0,0,0,0.2);
+    border-top-color: #060c14;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    display: none;
+  }
+  .btn-predict.loading .spinner { display: block; }
+  .btn-predict.loading .btn-txt { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Results Card ── */
+  .results-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    position: sticky; top: 24px;
+  }
+
+  .result-empty {
+    text-align: center; padding: 40px 20px;
+    color: var(--muted); font-size: 0.82rem; line-height: 1.8;
+  }
+  .result-empty .icon { font-size: 2.5rem; margin-bottom: 12px; display: block; }
+
+  /* Result blocks */
+  .result-block { display: none; }
+  .result-block.visible { display: block; }
+
+  .rain-result {
+    text-align: center;
+    padding: 24px 16px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+  }
+  .rain-result.rain-yes {
+    background: rgba(96,165,250,0.08);
+    border-color: var(--rain);
+  }
+  .rain-result.rain-no {
+    background: rgba(251,191,36,0.08);
+    border-color: var(--sun);
+  }
+  .rain-result .big-icon { font-size: 3rem; display: block; margin-bottom: 8px; }
+  .rain-result .verdict {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.5rem; font-weight: 800;
+    margin-bottom: 4px;
+  }
+  .rain-result.rain-yes .verdict { color: var(--rain); }
+  .rain-result.rain-no  .verdict { color: var(--sun); }
+  .rain-result .prob {
+    font-size: 0.78rem; color: var(--muted);
+  }
+  .rain-result .prob span { color: var(--text); font-weight: 500; }
+
+  /* Prob bar */
+  .prob-bar-wrap {
+    margin-top: 10px;
+    background: var(--surface2);
+    border-radius: 4px; height: 6px; overflow: hidden;
+  }
+  .prob-bar {
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, var(--rain), var(--accent));
+    transition: width .6s ease;
+    width: 0%;
+  }
+
+  /* Sub-results */
+  .sub-results { display: flex; flex-direction: column; gap: 12px; }
+  .sub-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .sub-card .sub-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .sub-card .sub-val {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.1rem; font-weight: 700; color: var(--text);
+  }
+  .sub-card .sub-icon { font-size: 1.4rem; }
+
+  /* Cluster badge */
+  .cluster-badge {
+    display: inline-block; padding: 3px 10px;
+    border-radius: 20px; font-size: 0.75rem; font-weight: 600;
+    background: rgba(52,211,153,0.15); color: var(--green);
+    border: 1px solid rgba(52,211,153,0.3);
+    margin-top: 2px;
+  }
+
+  /* Error */
+  .error-msg {
+    background: rgba(251,113,133,0.1);
+    border: 1px solid rgba(251,113,133,0.3);
+    border-radius: 8px; padding: 12px 14px;
+    font-size: 0.82rem; color: #fca5a5;
+    margin-top: 12px; display: none;
+  }
+
+  footer {
+    border-top: 1px solid var(--border);
+    margin-top: 60px; padding: 24px 0;
+    text-align: center; color: var(--muted); font-size: 0.76rem;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🌦</div>
+      <div>
+        <h1>Aus<span>Weather</span> ML</h1>
+        <div class="tagline">Rain in Australia — ML Prediction Dashboard</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Metrics Bar -->
+  <div class="metrics-bar">
+    <div class="metric-chip">
+      <span class="val">{{ metrics.get('cls_accuracy', '—') }}%</span>
+      <span class="lbl">Classification Accuracy</span>
+    </div>
+    <div class="metric-chip">
+      <span class="val">{{ metrics.get('r2_score', '—') }}</span>
+      <span class="lbl">Regression R² Score</span>
+    </div>
+    <div class="metric-chip">
+      <span class="val">{{ metrics.get('rmse', '—') }}°C</span>
+      <span class="lbl">Regression RMSE</span>
+    </div>
+    <div class="metric-chip">
+      <span class="val">{{ metrics.get('silhouette', '—') }}</span>
+      <span class="lbl">Silhouette Score</span>
+    </div>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="main-grid">
+
+    <!-- Input Form -->
+    <div class="card">
+      <div class="card-title">Weather Input</div>
+
+      <div class="form-grid">
+
+        <div class="section-label">📍 Location & Date</div>
+
+        <div class="field">
+          <label>Location</label>
+          <select id="Location">
+            <option value="">Unknown</option>
+            <option value="Sydney">Sydney</option>
+            <option value="Melbourne">Melbourne</option>
+            <option value="Brisbane">Brisbane</option>
+            <option value="Perth">Perth</option>
+            <option value="Adelaide">Adelaide</option>
+            <option value="Canberra">Canberra</option>
+            <option value="Darwin">Darwin</option>
+            <option value="Hobart">Hobart</option>
+            <option value="Albury">Albury</option>
+            <option value="Bendigo">Bendigo</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Month</label>
+          <select id="Month">
+            <option value="1">January</option><option value="2">February</option>
+            <option value="3">March</option><option value="4">April</option>
+            <option value="5">May</option><option value="6">June</option>
+            <option value="7">July</option><option value="8">August</option>
+            <option value="9">September</option><option value="10">October</option>
+            <option value="11">November</option><option value="12" selected>December</option>
+          </select>
+        </div>
+
+        <div class="section-label">🌡️ Temperature</div>
+
+        <div class="field">
+          <label>Min Temp (°C)</label>
+          <input type="number" id="MinTemp" value="13" step="0.1"/>
+        </div>
+        <div class="field">
+          <label>Max Temp (°C)</label>
+          <input type="number" id="MaxTemp" value="25" step="0.1"/>
+        </div>
+        <div class="field">
+          <label>Temp 9am (°C)</label>
+          <input type="number" id="Temp9am" value="17" step="0.1"/>
+        </div>
+        <div class="field">
+          <label>Temp 3pm (°C)</label>
+          <input type="number" id="Temp3pm" value="23" step="0.1"/>
+        </div>
+
+        <div class="section-label">💧 Humidity & Rain</div>
+
+        <div class="field">
+          <label>Humidity 9am (%)</label>
+          <input type="number" id="Humidity9am" value="71" min="0" max="100"/>
+        </div>
+        <div class="field">
+          <label>Humidity 3pm (%)</label>
+          <input type="number" id="Humidity3pm" value="44" min="0" max="100"/>
+        </div>
+        <div class="field">
+          <label>Rainfall (mm)</label>
+          <input type="number" id="Rainfall" value="0" step="0.1" min="0"/>
+        </div>
+
+        <div class="toggle-row">
+          <span class="toggle-label">Rain Today?</span>
+          <label class="toggle">
+            <input type="checkbox" id="RainToday"/>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="section-label">💨 Wind & Pressure</div>
+
+        <div class="field">
+          <label>Wind Gust Speed (km/h)</label>
+          <input type="number" id="WindGustSpeed" value="44"/>
+        </div>
+        <div class="field">
+          <label>Wind Speed 9am (km/h)</label>
+          <input type="number" id="WindSpeed9am" value="20"/>
+        </div>
+        <div class="field">
+          <label>Wind Speed 3pm (km/h)</label>
+          <input type="number" id="WindSpeed3pm" value="24"/>
+        </div>
+        <div class="field">
+          <label>Wind Gust Direction</label>
+          <select id="WindGustDir">
+            <option value="">Unknown</option>
+            <option value="N">N</option><option value="NNE">NNE</option>
+            <option value="NE">NE</option><option value="ENE">ENE</option>
+            <option value="E">E</option><option value="ESE">ESE</option>
+            <option value="SE">SE</option><option value="SSE">SSE</option>
+            <option value="S">S</option><option value="SSW">SSW</option>
+            <option value="SW">SW</option><option value="WSW">WSW</option>
+            <option value="W">W</option><option value="WNW">WNW</option>
+            <option value="NW">NW</option><option value="NNW">NNW</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Pressure 9am (hPa)</label>
+          <input type="number" id="Pressure9am" value="1017" step="0.1"/>
+        </div>
+        <div class="field">
+          <label>Pressure 3pm (hPa)</label>
+          <input type="number" id="Pressure3pm" value="1015" step="0.1"/>
+        </div>
+
+      </div>
+
+      <button class="btn-predict" onclick="predict()">
+        <span class="spinner"></span>
+        <span class="btn-txt">⚡ Run Prediction</span>
+      </button>
+
+      <div class="error-msg" id="errorMsg"></div>
+    </div>
+
+    <!-- Results -->
+    <div class="results-card">
+      <div class="card-title">Prediction Results</div>
+
+      <div class="result-empty" id="emptyState">
+        <span class="icon">🌤</span>
+        Fill in the weather data<br/>and click <strong>Run Prediction</strong><br/>to get ML results.
+      </div>
+
+      <div class="result-block" id="resultBlock">
+
+        <!-- Classification -->
+        <div class="rain-result" id="rainResult">
+          <span class="big-icon" id="rainIcon">🌧️</span>
+          <div class="verdict" id="rainVerdict">Rain</div>
+          <div class="prob">
+            Rain probability: <span id="rainProb">—</span>%
+          </div>
+          <div class="prob-bar-wrap">
+            <div class="prob-bar" id="probBar"></div>
+          </div>
+        </div>
+
+        <!-- Regression + Clustering -->
+        <div class="sub-results">
+          <div class="sub-card">
+            <div>
+              <div class="sub-label">Predicted Max Temp</div>
+              <div class="sub-val" id="maxTempVal">—</div>
+            </div>
+            <div class="sub-icon">🌡️</div>
+          </div>
+          <div class="sub-card">
+            <div>
+              <div class="sub-label">Weather Cluster</div>
+              <div class="sub-val">
+                <span class="cluster-badge" id="clusterVal">—</span>
+              </div>
+            </div>
+            <div class="sub-icon">🗂️</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /main-grid -->
+
+  <footer>
+    Built by <a href="https://github.com/AbdoOraby21" target="_blank">Abdelrahman Oraby</a>
+    · ML Capstone Project · WeatherAUS Dataset
+  </footer>
+
+</div><!-- /wrap -->
+
+<script>
+async function predict() {
+  const btn = document.querySelector('.btn-predict');
+  const err = document.getElementById('errorMsg');
+  btn.classList.add('loading');
+  err.style.display = 'none';
+
+  const payload = {
+    MinTemp:       parseFloat(document.getElementById('MinTemp').value),
+    MaxTemp:       parseFloat(document.getElementById('MaxTemp').value),
+    Rainfall:      parseFloat(document.getElementById('Rainfall').value),
+    WindGustSpeed: parseFloat(document.getElementById('WindGustSpeed').value),
+    WindSpeed9am:  parseFloat(document.getElementById('WindSpeed9am').value),
+    WindSpeed3pm:  parseFloat(document.getElementById('WindSpeed3pm').value),
+    Humidity9am:   parseFloat(document.getElementById('Humidity9am').value),
+    Humidity3pm:   parseFloat(document.getElementById('Humidity3pm').value),
+    Pressure9am:   parseFloat(document.getElementById('Pressure9am').value),
+    Pressure3pm:   parseFloat(document.getElementById('Pressure3pm').value),
+    Temp9am:       parseFloat(document.getElementById('Temp9am').value),
+    Temp3pm:       parseFloat(document.getElementById('Temp3pm').value),
+    RainToday:     document.getElementById('RainToday').checked ? 1 : 0,
+    Month:         parseInt(document.getElementById('Month').value),
+    Year:          2015, Day: 15,
+    Location:      document.getElementById('Location').value,
+    WindGustDir:   document.getElementById('WindGustDir').value,
+  };
+
+  try {
+    const res  = await fetch('/predict', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (!data.success) throw new Error(data.error);
+
+    // Show results
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('resultBlock').classList.add('visible');
+
+    const isRain = data.classification.prediction === 1;
+    const prob   = data.classification.probability;
+    const rr     = document.getElementById('rainResult');
+
+    rr.className = 'rain-result ' + (isRain ? 'rain-yes' : 'rain-no');
+    document.getElementById('rainIcon').textContent    = isRain ? '🌧️' : '☀️';
+    document.getElementById('rainVerdict').textContent = data.classification.label;
+    document.getElementById('rainProb').textContent    = prob;
+    document.getElementById('probBar').style.width     = prob + '%';
+
+    document.getElementById('maxTempVal').textContent = data.regression.predicted_maxtemp + ' °C';
+    document.getElementById('clusterVal').textContent = data.clustering.cluster_name;
+
+  } catch(e) {
+    err.textContent  = '⚠ Error: ' + e.message;
+    err.style.display = 'block';
+  } finally {
+    btn.classList.remove('loading');
+  }
+}
+</script>
+
+</body>
+</html>
